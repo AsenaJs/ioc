@@ -1,6 +1,6 @@
 {
   "name": "@asenajs/ioc",
-  "version": "0.0.1",
+  "version": "0.1.0",
   "author": "LibirSoft",
   "description": "IoC container for Bun: decorator-declared components, field-based dependency injection and a start/stop lifecycle",
   "repository": {
