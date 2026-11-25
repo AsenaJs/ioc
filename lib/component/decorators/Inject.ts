@@ -1,0 +1,105 @@
+import type { Class, DependencyClasses, Dependencies, Expressions } from '../../types';
+import { ComponentConstants } from '../../constants';
+import { defineTypedMetadata, getOwnTypedMetadata, getTypedMetadata } from '../../utils/typedMetadata';
+import { assertLegacyDecorator } from './legacyDecorator';
+
+/**
+ * Property decorator to inject a dependency.
+ *
+ * Supports three syntaxes:
+ * 1. Class injection: `@Inject(UserService)`
+ * 2. String injection with expression: `@Inject('UserService', (s) => s.getUsers())`
+ * 3. Tuple injection (helper pattern): `@Inject(channel('chat'))` where channel() returns [serviceName, expression]
+ *
+ * @param {Class | string | readonly [string, (injectedClass: any) => any]} Injection - The dependency to inject
+ * @param expression - Optional expression to evaluate on the injected class (only used with Class or string)
+ * @returns {PropertyDecorator} - The property decorator function
+ *
+ * @example
+ * ```typescript
+ * // Class injection
+ * @Inject(UserService)
+ * private userService: UserService;
+ *
+ * // String injection with expression
+ * @Inject('UserService', (s) => s.getAllUsers())
+ * private users: User[];
+ *
+ * // Tuple injection (helper pattern)
+ * @Inject(channel('chat'))
+ * private chat: Channel<'chat'>;
+ * ```
+ */
+export const Inject = (
+  Injection: Class | string | readonly [string | Class, (injectedClass: any) => any],
+  expression?: (injectedClass: any) => any,
+): PropertyDecorator => {
+  return (target: object, propertyKey: string): void => {
+    assertLegacyDecorator('Inject', propertyKey);
+
+    let dependencyName: string;
+    let resolvedExpression: ((injectedClass: any) => any) | undefined = expression;
+    // Kept only for class-based injections - string injections carry no class reference
+    let dependencyClass: Class | undefined;
+
+    // Check if Injection is a tuple [serviceName, expression]
+    if (Array.isArray(Injection) && Injection.length === 2) {
+      const [name, tupleExpression] = Injection;
+
+      // Check Name type, it can be a Class or String
+      dependencyName = typeof name === 'string' ? name : getTypedMetadata<string>(ComponentConstants.NameKey, name);
+
+      if (typeof name !== 'string') {
+        dependencyClass = name;
+      }
+
+      resolvedExpression = tupleExpression;
+    } else if (typeof Injection === 'string') {
+      dependencyName = Injection;
+    } else {
+      // Injection is a Class
+      dependencyName = getTypedMetadata<string>(ComponentConstants.NameKey, Injection);
+      // The `length === 2` guard above stops TS narrowing the tuple out of this branch
+      dependencyClass = Injection as Class;
+    }
+
+    // Store dependency
+    const dependencies: Dependencies =
+      getOwnTypedMetadata<Dependencies>(ComponentConstants.DependencyKey, target.constructor) || {};
+
+    if (!dependencies[propertyKey]) {
+      dependencies[propertyKey] = dependencyName;
+    }
+
+    defineTypedMetadata<Dependencies>(ComponentConstants.DependencyKey, dependencies, target.constructor);
+
+    // Store the class reference (class-based injections only) so tooling can
+    // derive the real method shape without instantiating the dependency
+    if (dependencyClass) {
+      const dependencyClasses: DependencyClasses =
+        getOwnTypedMetadata<DependencyClasses>(ComponentConstants.DependencyClassKey, target.constructor) || {};
+
+      if (!dependencyClasses[propertyKey]) {
+        dependencyClasses[propertyKey] = dependencyClass;
+      }
+
+      defineTypedMetadata<DependencyClasses>(
+        ComponentConstants.DependencyClassKey,
+        dependencyClasses,
+        target.constructor,
+      );
+    }
+
+    // Store expression if provided
+    if (resolvedExpression) {
+      const expressions: Expressions =
+        getOwnTypedMetadata<Expressions>(ComponentConstants.ExpressionKey, target.constructor) || {};
+
+      if (!expressions[propertyKey]) {
+        expressions[propertyKey] = resolvedExpression;
+      }
+
+      defineTypedMetadata<Expressions>(ComponentConstants.ExpressionKey, expressions, target.constructor);
+    }
+  };
+};

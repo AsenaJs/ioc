@@ -1,0 +1,40 @@
+import type { Class, Expressions, Strategies } from '../../types';
+import { ComponentConstants } from '../../constants';
+import { defineTypedMetadata, getOwnTypedMetadata, getTypedMetadata } from '../../utils/typedMetadata';
+import { assertLegacyDecorator } from './legacyDecorator';
+
+/**
+ * Property decorator to define a strategy.
+ *
+ * @param {Class | string} Injection - The class of component to inject.
+ * @param expression - The expression to evaluate on the injected class.
+ * @returns {PropertyDecorator} - The property decorator function.
+ */
+export const Strategy = (Injection: Class | string, expression?: (injectedClass) => any): PropertyDecorator => {
+  return (target: object, propertyKey: string) => {
+    assertLegacyDecorator('Strategy', propertyKey);
+
+    const strategies: Strategies =
+      getOwnTypedMetadata<Strategies>(ComponentConstants.StrategyKey, target.constructor) || {};
+
+    const injectionName =
+      typeof Injection === 'string' ? Injection : getTypedMetadata<string>(ComponentConstants.NameKey, Injection);
+
+    if (!strategies[propertyKey]) {
+      strategies[propertyKey] = injectionName;
+    }
+
+    if (expression) {
+      const expressions: Expressions =
+        getOwnTypedMetadata<Expressions>(ComponentConstants.ExpressionKey, target.constructor) || {};
+
+      if (!expressions[propertyKey]) {
+        expressions[propertyKey] = expression;
+      }
+
+      defineTypedMetadata<Expressions>(ComponentConstants.ExpressionKey, expressions, target.constructor);
+    }
+
+    defineTypedMetadata<Strategies>(ComponentConstants.StrategyKey, strategies, target.constructor);
+  };
+};
