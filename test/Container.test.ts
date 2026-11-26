@@ -5,10 +5,13 @@ import {
   ComponentType,
   Container,
   Inject,
+  IocApplication,
   PostConstruct,
+  Service,
   Strategy,
 } from '../index';
 import { ExportedDatabaseService } from './example-app-structure/database/ExportedDatabaseService.test';
+import { silentLogger } from './utils/silentLogger';
 
 @Component()
 class TestClass {
@@ -300,6 +303,16 @@ describe('Container', () => {
     const services = await container.resolveAll(ComponentType.COMPONENT);
 
     expect(services).toBeInstanceOf(Array);
+  });
+
+  test('resolveAll returns an empty array when no component has the kind', async () => {
+    @Service('OnlyService')
+    class OnlyService {}
+
+    const app = await IocApplication.create({ logger: silentLogger, components: [OnlyService] });
+
+    expect(await app.container.resolveAll(Symbol('kind:none'))).toEqual([]);
+    expect(await new Container().resolveAll(ComponentType.SERVICE)).toEqual([]);
   });
 
   test('should getStrategy components', async () => {

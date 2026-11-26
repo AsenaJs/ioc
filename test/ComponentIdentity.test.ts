@@ -1,5 +1,7 @@
 import { describe, expect, test } from 'bun:test';
-import { Container, defineComponent, Implements, Inject, IocApplication, IocEngine, Service, Strategy } from '../index';
+import { Container, defineComponent, Implements, IocApplication, IocEngine, Service, Strategy } from '../index';
+import { ScannedBaseConsumer } from './fixtures/undecoratedScan/ScannedBaseConsumer';
+import { ScannedBaseService } from './fixtures/undecoratedScan/ScannedBaseService';
 
 /**
  * Component *identity* - what a class is, what it is called, what scope it has - is read
@@ -39,54 +41,70 @@ const engineWith = (components: any[]) => {
   };
 };
 
+const UNDECORATED_SCAN_FOLDER = 'test/fixtures/undecoratedScan';
+
+const engineScanning = (sourceFolder: string) => {
+  const { engine, warnings } = engineWith([]);
+
+  engine.setConfig({ sourceFolder, rootFile: '' });
+
+  return { engine, warnings, register: () => engine.searchAndRegister() };
+};
+
 describe('component identity is own-only', () => {
   test('an undecorated subclass is not a component', async () => {
-    @Service('BaseRepo')
-    class BaseRepo {
-      public find() {
-        return 'base';
-      }
-    }
-
-    // The decorator was simply forgotten - a very ordinary mistake
-    class UserRepo extends BaseRepo {}
-
-    const { engine, register } = engineWith([BaseRepo, UserRepo]);
+    const { engine, register } = engineScanning(UNDECORATED_SCAN_FOLDER);
 
     await register();
 
-    const resolved = await engine.container.resolve('BaseRepo');
+    const resolved = await engine.container.resolve('ScannedBaseService');
 
-    // Not an array. Under the chained read both classes registered as 'BaseRepo' and this
-    // returned [BaseRepo, UserRepo], so `repo.find(...)` threw "find is not a function".
     expect(Array.isArray(resolved)).toBe(false);
-    // Identity, not membership: a UserRepo instance is also `instanceof BaseRepo`, so the
-    // last-write-wins form of the bug would read identical to the correct answer.
-    expect((resolved as any).constructor).toBe(BaseRepo);
+    expect((resolved as any).constructor).toBe(ScannedBaseService);
+    expect(engine.container.has('ScannedForgottenSubclass')).toBe(false);
   });
 
   test('the injected dependency stays a single instance', async () => {
-    @Service('SharedService')
-    class SharedService {
-      public value = 'shared';
-    }
-
-    class UndecoratedChild extends SharedService {}
-
-    @Service('Consumer')
-    class Consumer {
-      @Inject('SharedService')
-      public shared!: SharedService;
-    }
-
-    const { engine, register } = engineWith([SharedService, UndecoratedChild, Consumer]);
+    const { engine, register } = engineScanning(UNDECORATED_SCAN_FOLDER);
 
     await register();
 
-    const consumer: any = await engine.container.resolve('Consumer');
+    const consumer = (await engine.container.resolve<ScannedBaseConsumer>(
+      'ScannedBaseConsumer',
+    )) as ScannedBaseConsumer;
 
-    expect(Array.isArray(consumer.shared)).toBe(false);
-    expect(consumer.shared.value).toBe('shared');
+    expect(Array.isArray(consumer.base)).toBe(false);
+    expect(consumer.base.value).toBe('base');
+  });
+
+  test('a scanned folder boots and skips its undecorated classes', async () => {
+    const warnings: string[] = [];
+
+    const app = await IocApplication.create({
+      logger: { info: () => {}, warn: (message: string) => warnings.push(message), error: () => {} },
+      sourceFolder: UNDECORATED_SCAN_FOLDER,
+    });
+
+    expect(app.container.has('ScannedBaseService')).toBe(true);
+    expect(app.container.has('ScannedBaseConsumer')).toBe(true);
+    expect(app.container.has('ScannedForgottenSubclass')).toBe(false);
+    expect(app.container.has('ScannedPlainHelper')).toBe(false);
+    expect(warnings.filter((message) => message.includes('ScannedForgottenSubclass'))).toHaveLength(1);
+    expect(warnings.filter((message) => message.includes('ScannedPlainHelper'))).toEqual([]);
+  });
+
+  test('an undecorated subclass in an explicit component list fails registration', async () => {
+    @Service('BaseRepo')
+    class BaseRepo {}
+
+    class UserRepo extends BaseRepo {}
+
+    const { register } = engineWith([BaseRepo, UserRepo]);
+
+    await expect(register()).rejects.toThrow(
+      "'UserRepo' is listed in components but carries no component decorator (@Service, @Component, ...). " +
+        "It extends the component 'BaseRepo'",
+    );
   });
 
   test('a decorated subclass is still registered under its own name', async () => {
@@ -147,35 +165,26 @@ describe('component identity is own-only', () => {
 
   // Skipping the class silently is what the originating report explicitly asked us not to do:
   // a component that is simply never registered does nothing, and nothing anywhere says so.
-  test('warns, naming both classes, when a subclass is missing its decorator', async () => {
-    @Service('AnnouncedBase')
-    class AnnouncedBase {}
-
-    class ForgottenSubclass extends AnnouncedBase {}
-
-    const { warnings, register } = engineWith([AnnouncedBase, ForgottenSubclass]);
+  test('warns, naming both classes, when a scanned subclass is missing its decorator', async () => {
+    const { warnings, register } = engineScanning(UNDECORATED_SCAN_FOLDER);
 
     await register();
 
-    const warning = warnings.find((message) => message.includes('ForgottenSubclass'));
+    const warning = warnings.find((message) => message.includes('ScannedForgottenSubclass'));
 
     expect(warning).toBeString();
-    expect(warning).toContain('AnnouncedBase');
+    expect(warning).toContain('ScannedBaseService');
     expect(warning).toContain('NOT registered');
   });
 
-  test('stays quiet for an undecorated class that extends nothing', async () => {
-    @Service('QuietService')
-    class QuietService {}
-
-    class PlainHelper {}
-
-    const { warnings, register } = engineWith([QuietService, PlainHelper]);
+  test('stays quiet for a scanned undecorated class that extends nothing', async () => {
+    const { warnings, register } = engineScanning(UNDECORATED_SCAN_FOLDER);
 
     await register();
 
     // An ordinary helper in the scan folder is not a mistake and must not be reported.
-    expect(warnings.filter((message) => message.includes('carries no decorator'))).toEqual([]);
+    expect(warnings.filter((message) => message.includes('ScannedPlainHelper'))).toEqual([]);
+    expect(warnings.filter((message) => message.includes('carries no decorator'))).toHaveLength(1);
   });
 
   test('a decorated chain still registers each level', async () => {

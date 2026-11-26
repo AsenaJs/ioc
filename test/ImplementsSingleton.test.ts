@@ -182,7 +182,7 @@ describe('@Implements singleton', () => {
       { Class: FrozenClock, interface: 'IClock' },
     ]);
 
-    const scanned = ((await engine.container.resolveAll<object>(ComponentType.SERVICE)) ?? []).flat();
+    const scanned = (await engine.container.resolveAll<object>(ComponentType.SERVICE)).flat();
 
     expect(scanned).toHaveLength(2);
     expect(new Set(scanned.map((instance) => instance.constructor))).toEqual(new Set([SystemClock, FrozenClock]));
@@ -277,7 +277,7 @@ describe('@Implements singleton', () => {
 
     await engine.searchAndRegister([{ Class: SystemClock, interface: 'IClock' }]);
 
-    const scanned = ((await engine.container.resolveAll<object>(ComponentType.SERVICE)) ?? []).flat();
+    const scanned = (await engine.container.resolveAll<object>(ComponentType.SERVICE)).flat();
 
     expect(constructed).toBe(1);
     expect(await engine.container.resolve('IClock')).toBeInstanceOf(SystemClock);
