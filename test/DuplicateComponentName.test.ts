@@ -155,14 +155,19 @@ describe('duplicate component names', () => {
     @Service('OnlyRealComponent')
     class RealService {}
 
-    // Undecorated, and named the same. It is filtered out before the name check, so it must not
-    // turn a healthy application into a boot failure.
     class OnlyRealComponent {}
 
-    const { injectables } = await loadExplicit([RealService, OnlyRealComponent]);
+    const { engine } = engineWith();
+    const scanned = (engine as any)['processComponents']([RealService, OnlyRealComponent]);
+    const kept = (engine as any)['dedupeInjectables'](scanned);
 
-    expect(injectables).toHaveLength(1);
-    expect(injectables[0].Class).toBe(RealService);
+    expect(kept).toHaveLength(1);
+    expect(kept[0].Class).toBe(RealService);
+
+    const listed = loadExplicit([RealService, OnlyRealComponent]);
+
+    await expect(listed).rejects.toThrow("'OnlyRealComponent' is listed in components but carries no component");
+    await expect(listed).rejects.not.toThrow('Duplicate component name');
   });
 
   test('the loser used to be silently swapped for the winner', () => {

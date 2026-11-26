@@ -111,30 +111,13 @@ export class IocEngine implements ICoreService {
     const importInjectables = this.processImports(imports);
 
     if (components?.length) {
-      // Explicitly listed components go through the same identity check as scanned ones.
-      // They used to bypass it entirely, so the own-only rule held for `sourceFolder` apps and
-      // not for `components: [...]` ones - and on that path an undecorated subclass still
-      // registered under its base's name, overwriting it.
-      const listed = components.filter((component) => {
-        if (this.isValidComponent(component.Class)) {
-          return true;
-        }
+      const invalid = components.find((component) => !this.isValidComponent(component.Class));
 
-        this.warnAboutUndecoratedSubclass(component.Class);
-
-        return false;
-      });
-
-      if (!listed.length) {
-        throw new Error(
-          `None of the ${components.length} class(es) passed as components is a component: ` +
-            `${components.map((component) => this.describeClass(component.Class)).join(', ')}. ` +
-            'Each needs a component decorator of its own (@Service, @Component, ...), applied by this copy ' +
-            'of the package - a class decorated through a second installed copy is not recognised.',
-        );
+      if (invalid) {
+        throw new Error(this.describeInvalidListedComponent(invalid.Class));
       }
 
-      this.injectables = this.dedupeInjectables([...listed, ...importInjectables]);
+      this.injectables = this.dedupeInjectables([...components, ...importInjectables]);
 
       return;
     }
@@ -451,11 +434,9 @@ export class IocEngine implements ICoreService {
   }
 
   /**
-   * Validates and converts the `imports` list. Unlike scanned or explicitly listed
-   * components, an import that carries no decorator of its own is a hard error, not a
-   * warning: `warnAboutUndecoratedSubclass` stays silent for a class with no marker
-   * anywhere on its chain, and a silently dropped import is exactly the failure the
-   * option exists to prevent.
+   * Validates and converts the `imports` list. Like an explicitly listed component, and unlike a
+   * scanned class, an import that carries no decorator of its own is a hard error: a silently
+   * dropped import is exactly the failure the option exists to prevent.
    */
   private processImports(imports?: Class[]): InjectableComponent[] {
     if (!imports?.length) {
@@ -500,6 +481,22 @@ export class IocEngine implements ICoreService {
     );
   }
 
+  private describeInvalidListedComponent(entry: unknown): string {
+    const name = this.describeClass(entry);
+    const ancestor = this.findDecoratedAncestor(entry);
+    const inherited = ancestor
+      ? ` It extends the component '${ancestor.name}', but component identity is not inherited - ` +
+        `decorate '${name}' itself, or list '${ancestor.name}' if that is what you meant.`
+      : '';
+
+    return (
+      `'${name}' is listed in components but carries no component decorator (@Service, @Component, ...).` +
+      inherited +
+      ' The decorator has to be applied by this copy of the package - a class decorated through a second ' +
+      'installed copy is not recognised.'
+    );
+  }
+
   /**
    * @description The nearest class up the prototype chain that carries its own component
    * decorator, or undefined when none does.
@@ -525,7 +522,8 @@ export class IocEngine implements ICoreService {
   }
 
   /**
-   * Reports a class that extends a component but carries no decorator of its own.
+   * Reports a scanned class that extends a component but carries no decorator of its own. An
+   * explicitly listed one never gets here: `loadComponents` rejects it outright.
    *
    * Component identity is read own-only, so such a class is simply skipped. Registering it
    * under its *base's* name blew up on first inject - ugly, but at least detectable. Skipping

@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 import { IocApplication, Service } from '../index';
-import { silentLogger } from './utils/silentLogger';
+import { createCapturingLogger, silentLogger } from './utils/silentLogger';
 
 describe("a component named like one of the container's own services", () => {
   test('is refused when the name is given explicitly', async () => {
@@ -22,14 +22,14 @@ describe("a component named like one of the container's own services", () => {
   });
 });
 
-describe('an explicit component list that yields no component', () => {
+describe('an explicit component list with a class that is not a component', () => {
   class PlainOne {}
 
   class PlainTwo {}
 
   test('fails at create() instead of booting an empty container', async () => {
     await expect(IocApplication.create({ logger: silentLogger, components: [PlainOne, PlainTwo] })).rejects.toThrow(
-      'None of the 2 class(es) passed as components is a component: PlainOne, PlainTwo',
+      "'PlainOne' is listed in components but carries no component decorator (@Service, @Component, ...).",
     );
   });
 
@@ -39,12 +39,26 @@ describe('an explicit component list that yields no component', () => {
     );
   });
 
-  test('still boots when at least one listed class is a component', async () => {
+  test('fails at create() even when the other listed classes are components', async () => {
     @Service()
     class Real {}
 
-    const app = await IocApplication.create({ logger: silentLogger, components: [PlainOne, Real] });
+    await expect(IocApplication.create({ logger: silentLogger, components: [Real, PlainOne] })).rejects.toThrow(
+      "'PlainOne' is listed in components but carries no component decorator",
+    );
+  });
 
-    expect(await app.resolve(Real)).toBeInstanceOf(Real);
+  test('names the undecorated class instead of dropping it silently', async () => {
+    @Service('one')
+    class One {}
+
+    class Plain {}
+
+    const { logger, entries } = createCapturingLogger();
+
+    await expect(IocApplication.create({ logger, components: [One, Plain] })).rejects.toThrow(
+      "'Plain' is listed in components but carries no component decorator (@Service, @Component, ...).",
+    );
+    expect(entries).toEqual([]);
   });
 });

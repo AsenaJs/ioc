@@ -9,6 +9,7 @@ import {
   PostConstruct,
   PostProcessor,
   Service,
+  StartHookError,
 } from '../index';
 import type { IocLogger, LifecycleService } from '../index';
 import { createCapturingLogger, silentLogger } from './utils/silentLogger';
@@ -134,6 +135,42 @@ describe('lifecycle hooks', () => {
 
       await expect(start).rejects.toThrow("@OnStart hook 'Broken.open()' failed");
       await expect(start).rejects.toHaveProperty('cause.message', 'cannot reach the thing');
+    });
+
+    test('rejects with a StartHookError carrying the component, the hook and the cause', async () => {
+      const app = await createApp([Healthy, Broken]);
+
+      const error = await app.start().catch((caught: unknown) => caught);
+
+      expect(error).toBeInstanceOf(StartHookError);
+      expect(error).toMatchObject({
+        name: 'StartHookError',
+        component: 'Broken',
+        hook: 'open',
+        message: "@OnStart hook 'Broken.open()' failed",
+      });
+      expect((error as StartHookError).cause).toBeInstanceOf(Error);
+      expect(((error as StartHookError).cause as Error).message).toBe('cannot reach the thing');
+    });
+
+    test('rejects with a StartHookError for a failing @PostConstruct as well', async () => {
+      const cause = new Error('legacy init failed');
+
+      @Service()
+      class LegacyBroken {
+        @PostConstruct()
+        public init() {
+          throw cause;
+        }
+      }
+
+      const app = await createApp([LegacyBroken]);
+
+      const error = await app.start().catch((caught: unknown) => caught);
+
+      expect(error).toBeInstanceOf(StartHookError);
+      expect(error).toMatchObject({ component: 'LegacyBroken', hook: 'init' });
+      expect((error as StartHookError).cause).toBe(cause);
     });
 
     test('logs the hook and the cause message', async () => {

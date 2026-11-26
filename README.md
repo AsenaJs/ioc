@@ -76,7 +76,7 @@ constructor arguments is not a component - build it with `new` where it is used.
 
 | Option         | Behaviour                                                                                              |
 | -------------- | ------------------------------------------------------------------------------------------------------ |
-| `components`   | Explicit classes. When non-empty, nothing is scanned and the file system is never touched. A list in which no class is a component fails `create()`. |
+| `components`   | Explicit classes. When non-empty, nothing is scanned and the file system is never touched. A listed class without a component decorator fails `create()`. |
 | `sourceFolder` | Folder scanned for decorated classes, plus those declared in the entry file above the `create()` call. |
 | `imports`      | Always added on top of whichever of the two applied.                                                   |
 

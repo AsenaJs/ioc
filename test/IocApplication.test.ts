@@ -35,16 +35,15 @@ describe('IocApplication', () => {
   });
 
   test('hands the engine diagnostics to the given logger', async () => {
-    @Service()
-    class Present {}
-
-    class Forgotten extends Present {}
-
     const { logger, entries } = createCapturingLogger();
 
-    await IocApplication.create({ logger, components: [Present, Forgotten] });
+    await IocApplication.create({ logger, sourceFolder: 'test/fixtures/undecoratedScan' });
 
-    expect(entries.some((entry) => entry.level === 'warn' && entry.message.includes('Forgotten'))).toBe(true);
+    const warned = entries.some(
+      (entry) => entry.level === 'warn' && entry.message.includes('ScannedForgottenSubclass'),
+    );
+
+    expect(warned).toBe(true);
   });
 
   test('a component can inject the container itself', async () => {

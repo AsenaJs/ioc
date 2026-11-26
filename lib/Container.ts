@@ -30,6 +30,23 @@ export class UnregisteredDependencyError extends Error {
   }
 }
 
+/**
+ * Thrown when an `@OnStart` (or `@PostConstruct`) hook throws or rejects.
+ *
+ * The original error is the `cause`; `component` and `hook` name the method that failed, so an
+ * application can tell a failed start hook apart from any other error without reading the message.
+ */
+export class StartHookError extends Error {
+  public constructor(
+    public readonly component: string,
+    public readonly hook: string,
+    cause: unknown,
+  ) {
+    super(`@OnStart hook '${component}.${hook}()' failed`, { cause });
+    this.name = 'StartHookError';
+  }
+}
+
 export class Container {
   private _services: { [key: string]: ContainerService | ContainerService[] } = {};
 
@@ -296,16 +313,12 @@ export class Container {
   }
 
   /**
-   * @typeOfComponent is the type of the component
-   *
-   * */
-  public async resolveAll<T>(typeOfComponent: ComponentKind) {
+   * @description Resolve every component of a kind.
+   * @param {ComponentKind} typeOfComponent - The kind the components were declared with
+   * @returns {Promise<(T | T[])[]>} One entry per key, empty when no component has the kind
+   */
+  public async resolveAll<T>(typeOfComponent: ComponentKind): Promise<(T | T[])[]> {
     const matchingServices = this.filterServices(typeOfComponent);
-
-    if (!matchingServices.length) {
-      return null;
-    }
-
     const instances: (T | T[])[] = [];
 
     for (const containerService of matchingServices) {
@@ -418,20 +431,20 @@ export class Container {
    * Walks the prototype chain ancestors-first and runs each method name once, so a hook
    * inherited by three classes still fires once.
    *
-   * A failure used to `process.exit(1)` here, which turned one broken component into a suite
-   * reporting `0 pass / 1 fail` with no indication of why. It now throws, naming the hook, with
+   * A failing hook is rethrown as a {@link StartHookError} naming the class and the method, with
    * the original error as `cause` - the boot fails, the process decides what to do about it.
    *
    * @param {any} instance - The instance to run hooks on
    * @param {Class} Class - The class of the instance
    * @returns {Promise<void>}
+   * @throws {StartHookError} When a hook throws or rejects
    */
   public async executeStartHooks(instance: any, Class: Class): Promise<void> {
     for (const hook of this.collectHookMethods(Class, ComponentConstants.PostConstructKey)) {
       try {
         await instance[hook]();
       } catch (error) {
-        throw new Error(`@OnStart hook '${Class.name}.${hook}()' failed`, { cause: error });
+        throw new StartHookError(Class.name, hook, error);
       }
     }
   }
